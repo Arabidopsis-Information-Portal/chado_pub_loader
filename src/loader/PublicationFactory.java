@@ -2,6 +2,7 @@ package loader;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.Hashtable;
 
 import org.apache.log4j.Logger;
 
@@ -10,15 +11,14 @@ import model.Author;
 import chado.ChadoCVFactory;
 import chado.ChadoDBxref;
 public class PublicationFactory  {
-	private static final Logger LOG = Logger.getLogger(ChadoCVFactory.class);
-    private final Connection connection;
+	static Logger LOG = Logger.getLogger(PublicationFactory.class);
+    private final Connection connection ;
     private PreparedStatement pubIDstmt;
     public PublicationFactory (Connection connection){
     	this.connection = connection;
-    	String getPubIDquery = "SELECT pub_id FROM chado.pub "
+    	String getPubIDquery = "SELECT pub_id FROM pub "
     			+ " WHERE type_id = ? AND "
     			+ " title = ? AND "
-    			+ " pyear = ? AND "
     			+ " series_name = ?";
     	try {
     		pubIDstmt = connection.prepareStatement(getPubIDquery);
@@ -29,8 +29,8 @@ public class PublicationFactory  {
     }
     public int getPubDBxRefForPMID(String pmid, int dbID) throws SQLException {
     	int dbXrefID = 0;
-    	String query = "SELECT dbxref_id from chado.dbxref WHERE db_id = "+dbID+ " AND accession=?";
-    	System.out.println(query);
+    	String query = "SELECT dbxref_id from dbxref WHERE db_id = "+dbID+ " AND accession=?";
+    	LOG.info("Executing: "+query + " for PMID="+pmid);
     	PreparedStatement stmt = connection.prepareStatement(query);
     	stmt.setString(1, pmid);
     	ResultSet res = stmt.executeQuery();
@@ -42,9 +42,9 @@ public class PublicationFactory  {
     public int getPubIdForDBXrefID (int dbXrefID) 
     		throws SQLException {
     	int pubID = 0;
-    	String query = "SELECT pub_id FROM chado.pub_dbxref"
+    	String query = "SELECT pub_id FROM pub_dbxref"
     			+ " WHERE dbxref_id = ?";
-    	LOG.info("executing: " + query);
+    	LOG.info("executing: " + query +" for dbxref_id="+dbXrefID);
     	PreparedStatement stmt = connection.prepareStatement(query);
     	stmt.setInt(1,dbXrefID);
     	ResultSet res = stmt.executeQuery();
@@ -55,7 +55,7 @@ public class PublicationFactory  {
     		numPubForPmid ++;
     	}
     	if(numPubForPmid > 1){
-    		LOG.warn("There are duplicated records for PMID with dbxref_id=" + dbXrefID);
+    		LOG.warn("There are multiple records for PMID with dbxref_id=" + dbXrefID);
     	}
     	return pubID;
     }
@@ -85,17 +85,16 @@ public class PublicationFactory  {
 				//PMID is found, let's find corresponding pub_id
 				// it should be one-to-one relationship
 				pubID = getPubIdForDBXrefID(dbXrefID);
+				LOG.debug("Found dbxref record for PMID= "+pub.getPubMedId());
 			}
     	}
 		if(pubID == 0){
 			int typeCVTermId = pub.getCVTermId();
-			
 			pubIDstmt.setInt(1, typeCVTermId );
 			pubIDstmt.setString(2, pub.getTitle());
-			pubIDstmt.setString(3, pub.getYear());
-			
-			pubIDstmt.setString(4,pub.getName());
+			pubIDstmt.setString(3,pub.getName());
 			ResultSet res = pubIDstmt.executeQuery();
+			LOG.debug("Looking for title=\""+pub.getTitle()+"\" cvterm_id for type="+typeCVTermId +" in journal: \""+pub.getName()+"\"");
 			while(res.next()){
 				pubID = res.getInt("pub_id");
 			}
@@ -111,8 +110,8 @@ public class PublicationFactory  {
     public int addPub(Publication pub) throws SQLException{
     	int newPubID = 0;
     	
-    	String query = "INSERT into chado.pub (type_id, title, pyear, series_name, volume,pages, uniquename) "
-    			+ " VALUES (?,?,?,?,?,?,?)";
+    	String query = "INSERT into pub (type_id, title, pyear, series_name, volume,pages, uniquename, issue) "
+    			+ " VALUES (?,?,?,?,?,?,?,?)";
     	PreparedStatement stmt = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
     	stmt.setInt(1,pub.getCVTermId());
     	stmt.setString(2,pub.getTitle());
@@ -120,28 +119,30 @@ public class PublicationFactory  {
     	stmt.setString(4,pub.getName());
     	stmt.setString(5,pub.getVolume());
     	stmt.setString(6,pub.getPages());
+    	
     	String uniquename = createUniquename(pub);
     	pub.setUniqueName(uniquename);
     	stmt.setString(7, uniquename);
+    	stmt.setString(8,pub.getIssue());
+    	//stmt.setString(9, pub.getMonth());
     	LOG.info("Executing :\""+query+"\" for "+pub.getCVTermId()+"; "+pub.getTitle()+"; "+pub.getYear()+"; "+pub.getName()+"; "+uniquename);
-    	System.out.println("Executing :\""+query+"\" for "+pub.getCVTermId()+"; "+pub.getTitle()+"; "+pub.getYear()+"; "+pub.getName()+"; "+uniquename);
     	int count = stmt.executeUpdate();
     	ResultSet resKey = stmt.getGeneratedKeys();
     	if(resKey.next()){
     		newPubID = resKey.getInt(1);
-    		System.out.println("New pub_id = "+newPubID);
+    		LOG.debug("New pub_id = "+newPubID);
     	}
-    	System.out.println("Updated "+ count+ " raws in pub");
+    	LOG.debug("Updated "+ count+ " raws in pub");
     	return newPubID;
     }
     public int insertPubDBXref(int dbxrefID,  int pubID) throws SQLException {
     	int pubDBxrefID = 0;
-    	String query = "INSERT into chado.pub_dbxref (pub_id, dbxref_id, is_current) "
+    	String query = "INSERT into pub_dbxref (pub_id, dbxref_id, is_current) "
     			+ "VALUES (?,?,true)";
     	PreparedStatement stmt = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
     	stmt.setInt(1, pubID);
     	stmt.setInt(2, dbxrefID);
-    	int count = stmt.executeUpdate();
+    	stmt.executeUpdate();
     	ResultSet resKey = stmt.getGeneratedKeys();
     	if(resKey.next()){
     		pubDBxrefID = resKey.getInt(1);
@@ -153,7 +154,7 @@ public class PublicationFactory  {
     	boolean year = false;
     	String authorsList = pub.getAuthorsList();
     	if(authorsList!=null && !authorsList.isEmpty()){
-    		uname += authorsList+".";
+    		uname = authorsList;
     	}
     	if(pub.getTitle()!=null && !pub.getTitle().isEmpty()){
     		addSpace(uname);
@@ -171,14 +172,14 @@ public class PublicationFactory  {
     	}
     	if(pub.getVolume()!=null && !pub.getVolume().isEmpty()){
     		if(year){
-    			uname +="; ";
+    			uname +=";";
     		}
     		uname += pub.getVolume();
     		if(pub.getPages() != null && !pub.getPages().isEmpty()){
     			uname += ":"+pub.getPages();
     		}
     	}
-    	System.out.println("uniquename="+uname);
+    	LOG.debug("Created uniquename: "+uname);
     	return uname;
     }
     public String addSpace (String s){
@@ -189,7 +190,7 @@ public class PublicationFactory  {
     }
     public int addPubProp (int typeID, int pubID, String value) throws SQLException {
     	int pubPropID=0;
-    	String query = "INSERT into chado.pubprop (pub_id, type_id, value, rank) "
+    	String query = "INSERT into pubprop (pub_id, type_id, value, rank) "
     			+ "VALUES (?, ?, ?, ?)";
     	PreparedStatement stmt = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
     	stmt.setInt(1,pubID);
@@ -202,7 +203,7 @@ public class PublicationFactory  {
     public void updatePubProp(int typeID, int pubID, String value) throws SQLException {
     	int pubPropID=0;
     	//pub_id + type_id + rank should be unique in pubprop (rank is always 0 here)
-    	String query = "SELECT pubprop_id from chado.pubprop WHERE pub_id =? and type_id=?";
+    	String query = "SELECT pubprop_id from pubprop WHERE pub_id =? and type_id=?";
     	PreparedStatement stmt = connection.prepareStatement(query);
     	stmt.setInt(1, pubID);
     	stmt.setInt(2, typeID);
@@ -214,7 +215,7 @@ public class PublicationFactory  {
     		count++;
     	}
     	if(count > 1){
-    		System.out.println("PublicationFactory.updatePubProp: multiple records for pubID="+pubID+" typeID="+" value:"+typeID+value);
+    		LOG.warn("updatePubProp: multiple records for pubID="+pubID+" typeID="+" value:"+typeID+value);
     	}
     	if(pubPropID == 0){
     		addPubProp(typeID,pubID,value);
@@ -223,12 +224,12 @@ public class PublicationFactory  {
     }
     public void addAuthors (ArrayList<Author> authors, int pubID) throws SQLException {
     	//as it is done in tripal: delete all records for pubID from pubauthor
-    	String query = "DELETE FROM chado.pubauthor WHERE pub_id = ?";
+    	String query = "DELETE FROM pubauthor WHERE pub_id = ?";
 		PreparedStatement stmt = connection.prepareStatement(query);
 		stmt.setInt(1,pubID);
 		int aNumber = stmt.executeUpdate();
-		System.out.println("Deleted "+aNumber+ " records from pubauthor table for pub_id="+pubID);
-		String insertQuery = "INSERT into chado.pubauthor (pub_id, surname,givennames,rank) "
+		LOG.debug("Deleted "+aNumber+ " records from pubauthor table for pub_id="+pubID);
+		String insertQuery = "INSERT into pubauthor (pub_id, surname,givennames,rank) "
 				+ " VALUES (?,?,?,?)";
 		stmt = connection.prepareStatement(insertQuery, Statement.RETURN_GENERATED_KEYS);
     	for (Author a: authors){
@@ -243,12 +244,25 @@ public class PublicationFactory  {
     		stmt.setInt(4, a.getRank());
     		int count = stmt.executeUpdate();
     		ResultSet resKey = stmt.getGeneratedKeys();
-    		//if(resKey.next()){
-        	//	System.out.println(resKey.getInt(1)+": Updated pubauthor record for "+ a.getName());
-        	//}
+    		if(resKey.next()){
+        		LOG.debug(resKey.getInt(1)+": Updated pubauthor record for "+ a.getName());
+        	}
 
     	}
-    	
+    }
+    public Hashtable collectPMIDs() throws SQLException {
+    	Hashtable<String,Integer> pubMedPubs = new Hashtable<String,Integer>();
+    	String query = "SELECT accession, pub_id FROM pub_dbxref  p, dbxref x, db d "+
+    	"WHERE d.name='PMID' and x.db_id=d.db_id and p.dbxref_id=x.dbxref_id";
+    	PreparedStatement stmt = connection.prepareStatement(query);
+    	ResultSet res = stmt.executeQuery();
+    	int count = 0;
+    	while (res.next()){
+    		pubMedPubs.put(res.getString("accession"),res.getInt("pub_id"));
+    		count++;
+    	}
+    	LOG.info("collectPMIDs: found "+count+" PMIDs in db");
+    	return pubMedPubs;
     }
 
 }

@@ -18,7 +18,7 @@ public class ChadoDBxref {
 		Map<String, Integer> allDBs = new HashMap();
 		String query = 
 				"SELECT db_id, name "
-				+ "  FROM chado.db";
+				+ "  FROM db";
 		LOG.info("executing: " + query);
 		PreparedStatement stmt = this.connection.prepareStatement(query);
 		ResultSet res = stmt.executeQuery();
@@ -48,7 +48,7 @@ public class ChadoDBxref {
 		//prepare query to get dbxref_id for given accession and db_id
 		String dbXrefQuery =
 				"SELECT dbxref_id "
-				+ "from chado.dbxref "
+				+ "FROM dbxref "
 				+ "WHERE db_id = ? and accession = ?";
 		this.dbXrefStmt = connection.prepareStatement(dbXrefQuery);
 		dbXrefStmt.setInt(1,dbId);
@@ -63,7 +63,7 @@ public class ChadoDBxref {
     	int dbXrefID =0;
     	int dbID =0;
     	
-    	String query = "SELECT db_id FROM chado.db WHERE name = ?";
+    	String query = "SELECT db_id FROM db WHERE name = ?";
     	PreparedStatement stmt = connection.prepareStatement(query);
     	stmt.setString(1,dbName);
     	ResultSet res = stmt.executeQuery();
@@ -84,11 +84,11 @@ public class ChadoDBxref {
     }
 	public int insertDBXref (int dbID, String accession) throws SQLException {
     	int dbxrefID;
-    	String query = "INSERT into chado.dbxref (db_id, accession) VALUES (?,?)";
+    	String query = "INSERT into dbxref (db_id, accession) VALUES (?,?)";
     	PreparedStatement stmt = connection.prepareStatement(query);
     	stmt.setInt(1,dbID);
     	stmt.setString(2,accession);
-    	System.out.println("executing \""+query+ "for db_id=" + dbID + " and accession=" + accession);
+    	LOG.info("executing \""+query+ "for db_id=" + dbID + " and accession=" + accession);
     	dbxrefID = stmt.executeUpdate(); // returns either raw count or 0, I need new dbxref_id
     	return dbxrefID;
     }

@@ -2,14 +2,16 @@ package model;
 
 import java.lang.String;
 import java.util.*;
+import org.apache.log4j.Logger;
 
 public class Publication {
 	private String pages=null;
-	private String month;
+	private String month=null;
 	private String date=null;
+	private String day = null;
 	private String volume=null;
 	private String issue=null;
-	private String type; 
+	private String type=null; 
 	private String first=null;
 	private String last=null;
 	private String city = null;
@@ -24,13 +26,14 @@ public class Publication {
 	private String pmid = null;
 	private int id;
 	private String abstractText;
-	private String title;
-	private String doi;
-	private String journal;
-	private String firstAuthor;
-	ArrayList<Author> authors = new ArrayList();
+	private String title=null;
+	private String doi=null;
+	private String journal=null;
+	private String firstAuthor=null;
+	ArrayList<Author> authors = new ArrayList(); //ordered set
 	private String authorsList = null;
 	private String uniquename = null;
+	static Logger LOG = Logger.getLogger(Publication.class);
 	 
 	public int getCVTermId(){return cvtermId;}
 	public void setCVTermId(int cvtermId){ this.cvtermId = cvtermId;}
@@ -50,7 +53,8 @@ public class Publication {
 		return name;
 	}
 	public void setName(String name){this.name=name;}
-	
+	public void setDay (String day){ this.day = day;}
+	public String getDay (){return day;}
 	public String getCity() {return city;}
 	public void setCity (String city ){this.city=city;}
 	
@@ -136,14 +140,15 @@ public class Publication {
     	this.authorsList = authorsList;
     }
     public String getAuthorsList (){
-    	int count = authors.size()-1;
-    	if(authorsList == null){
+    	if(authors.size() > 0 && authorsList == null){
+	    	int count = authors.size()-1;
+	    	authorsList = "";
     		for (int i = 0; i < count; i++){
     			authorsList +=  authors.get(i).getName()+", ";
     		}
     		authorsList += authors.get(count).getName()+". ";
     	}
-    	
+    	setAuthorsList(authorsList);
     	return authorsList;
     }
     @Override public String toString() { 
@@ -151,7 +156,54 @@ public class Publication {
     	
     	return pmid+"\t\""+type+"\"\t"+date+"\t\""+name+"\"\t\""+title+"\"\n";
     }
-    
+    public void printData(){
+    	if (pmid != null){
+    		System.out.println("PMID="+pmid);
+    	}
+    	if(doi != null){
+    		System.out.println("DOI="+doi);
+    	}
+    	if(type != null){
+    		System.out.println("Type="+type);
+    	}
+    	if(title != null ){
+    		System.out.println("Title: "+title);
+    	}
+    	if(journal != null){
+    		System.out.print("Journal="+journal);
+    	}
+    	if(volume != null){
+    		System.out.print("; Volume="+volume);
+    	}
+    	if(date !=null){
+    		System.out.print(" Date="+date);
+    	}
+    	if(issue != null){
+    		System.out.print(" Issue: "+issue);
+    	}
+    	if(pages !=null){
+    		System.out.print(" Pages:"+pages);
+    	} else {
+    		if(first !=null){
+    			System.out.print(" Pages:"+first);
+    		} 
+    		if(last != null){
+    			System.out.print("-"+last);
+    		}
+    	}
+    	System.out.println();
+    	if(abstractText != null){
+    		System.out.println(abstractText);
+    	}
+    	if(authors !=null && authors.size()>0){
+    		System.out.println("Authors:");
+    		for (int i = 0; i < authors.size(); i++){
+    			Author a = authors.get(i);
+    			System.out.println(a.toString());
+    		}
+        
+    	}
+    }
     	public void setFieldValue(String fieldName, final Object value) {
         if ("pages".equals(fieldName)) {
             pages = (java.lang.String) value;
@@ -203,7 +255,7 @@ public class Publication {
         	name = (java.lang.String)value;
         } else {
             
-           System.out.println("Unknown field " + fieldName);
+           LOG.warn("Unknown field " + fieldName);
         }
     }
 

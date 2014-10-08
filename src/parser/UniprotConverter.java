@@ -16,14 +16,14 @@ import org.xml.sax.helpers.*;
 import javax.xml.parsers.*;
 import model.*;
 import loader.*;
+import org.apache.log4j.Logger;
+
 public class UniprotConverter extends DefaultHandler {
 	private Stack<String> stack = new Stack<String>();
     private String attName = null;
     private StringBuffer attValue = null;
-    private int entryCount = 0;
     private int noGeneLocus = 0;
     private int noProtId = 0;
-    private int noProteinAcc = 0;
     private Entry entry;
 	private Publication pub = null;
 	private int rank ;
@@ -31,6 +31,8 @@ public class UniprotConverter extends DefaultHandler {
 	private boolean loadDB = false;
 	private boolean loadPM = false;
 	private PubLoader pubLoader = null;
+	static Logger LOG = Logger.getLogger(UniprotConverter.class);
+	
 	public UniprotConverter (){
 		super();
 	}
@@ -39,15 +41,11 @@ public class UniprotConverter extends DefaultHandler {
 	}
 	public void startDocument() throws SAXException {
 		Date date = new Date ();
-		System.out.println ("Start document "+ date.toString());
+		LOG.info ("Start document "+ date.toString());
 	}
 	@Override
 	public void startElement(String namespaceURI, String localName, String qName,  Attributes attrs)
 		throws SAXException {
-		/* if("".equals(namespaceURI))
-			System.out.println("Start element: "+qName);
-		else 
-			System.out.println("Start element: {"+namespaceURI + "}" + qName);*/
 		String previousQName = null;
         if (!stack.isEmpty()) {
             previousQName = stack.peek();
@@ -57,15 +55,11 @@ public class UniprotConverter extends DefaultHandler {
         	entry=new Entry();
 	
         } else if("property".equals(qName) && "dbReference".equals(previousQName)){
-        	/*String geneID = getAttrValue(attrs, "gene ID");
-        	
-        	if(geneID == null){
-        		
-        	}else {
-        		System.out.println("gene ID="+ geneID);
-        		entry.set("geneID", geneID);
-        	}*/
-        	
+        	String geneID = getAttrValue(attrs, "gene ID");
+        	if(geneID != null){
+        		LOG.debug("gene ID="+ geneID);
+        		entry.setGeneID(geneID);
+        	}
         } else if ("name".equals(qName) && "entry".equals(previousQName)) {
             attName = "primaryIdentifier";
             
@@ -101,7 +95,7 @@ public class UniprotConverter extends DefaultHandler {
         	}
         } else if ("authorList".equals(previousQName) && stack.search("citation") == 2){
         	Author author = new Author ();
-        	author.setType (qName); //person or ?... 
+        	author.setType (qName); //person or consortium ?... 
         	String aname = getAttrValue(attrs,"name");
         	aname = aname.replace(".","");
         	author.setName(aname); //as it is in uniprot file
@@ -120,7 +114,6 @@ public class UniprotConverter extends DefaultHandler {
         }
         super.startElement(namespaceURI, localName, qName, attrs);
         stack.push(qName);
-       // System.out.println("Stack startElement: "+stack);
         attValue = new StringBuffer();
 
 	}
@@ -129,48 +122,29 @@ public class UniprotConverter extends DefaultHandler {
      throws SAXException  {
         super.endElement(uri, localName, qName);
         stack.pop();
-       // System.out.println("Stack endElement after pop: "+stack);
-		//System.out.println("qName after pop: "+ qName);
-       // if (attName == null && attValue.toString() == null) {
-       //     return;
-       // } 
         String previousQName = null;
         if (!stack.isEmpty()) {
             previousQName = stack.peek();
         }
-        //System.out.println("End element: "+ qName);
-        
         if ("accession".equals(attName)){
-        	//System.out.println("Accession = "+attValue.toString());
-        	entry.setProteinAccession(attValue.toString());
-        	//System.out.println(entry.get("accession"));
+        	if(entry.getProteinAccession() == null){
+        		entry.setProteinAccession(attValue.toString());
+        	}
         } else if ("primaryIdentifier".equals(attName)){
-        	//System.out.println("Primary protein id = " + attValue.toString());
         	entry.setProteinPrimaryID(attValue.toString());
         } else if ("name".equals(qName) && "gene".equals(previousQName)){
         	if("ordered locus".equals(attName)){
-        		//System.out.println("gene="+ attValue.toString().toUpperCase() );
-        		
         		entry.setGeneLocus(attValue.toString().toUpperCase());
         	}
         } else if("citation".equals(qName)){
-        	//System.out.println ("/Citation");
         	if(pub !=null){
-        		//System.out.println("Pub Type is "+pub.getType());
         		String pubType=pub.getType(); //exclude "submission"
         		if(!pubType.equals("submission")){
-        			//process 
-        			if(pub.getPubMedId() == null){
-        				
-        			} else {
-        				entry.addPublication(pub);
-        			}
+        			entry.addPublication(pub);
         		}
         	}
-        	//System.out.println("CITATION:"+pub);
         }else if("title".equals(attName) ){
         	String title = attValue.toString();
-        	//System.out.println("Title ="+title);
         	if (pub != null){
         		pub.setTitle(title);
         	}
@@ -180,22 +154,12 @@ public class UniprotConverter extends DefaultHandler {
         		pub.setLocator(locator);
         	}
         } else if ("entry".equals(qName)){
-        	
-        	//System.out.println("/Entry");
         	try {
         		processEntry (entry);
         	} catch (SQLException sqle){
-        		System.out.println("UniprotConverter.processEntry Exception: "+sqle);
+        		LOG.error("UniprotConverter.processEntry Exception: "+sqle);
         	}
         }
-        //System.out.println("qName in endElement: "+ qName);
-        
-  
-        
-       // System.out.println("endElement: previous QName="+previousQName);
-       // System.out.println("Attname="+attName+" value="+attValue.toString());
-        
-
 	}
 	public void characters  (char ch[], int start, int length) throws SAXException {
 		
@@ -222,7 +186,6 @@ public class UniprotConverter extends DefaultHandler {
 	            ++st;
 	            --l;
 	        }
-	
 	        if (l > 0) {
 	            StringBuffer s = new StringBuffer();
 	            s.append(ch, st, l);
@@ -232,58 +195,48 @@ public class UniprotConverter extends DefaultHandler {
     }
 	public void endDocument() throws SAXException {
 		Date date = new Date();
-		System.out.println("End document: "+ date.toString());
-		System.out.println("No geneLocus="+noGeneLocus+"; noProtID="+noProtId+"; noProteinAcc="+noProteinAcc);
+		LOG.info("End document: "+ date.toString());
+		LOG.warn("No geneLocus="+noGeneLocus+"; noProtID="+noProtId);
 	}
 	public void processEntry(Entry entry) throws SQLException {
-		//entryCount++;
-		//if(entryCount % 100 == 0){
-		//	System.out.println("Processed "+ entryCount + " entries.");
-		//}
-		if(loadDB){
-			pubLoader.processEntry(entry,loadPM);
+		String proteinAcc = entry.getProteinAccession();
+		if(proteinAcc == null){
+			LOG.error("No protein accession");
 		} else {
-			Set <Publication> pubs = entry.getPublications();
-			if(pubs.isEmpty()){
-				return;
-			}
-			Iterator<Publication> iter =  pubs.iterator();
-			
-			String gene = entry.getGeneLocus();
-			if(gene == null){
-				//System.out.println("No gene locus for");
-				noGeneLocus++;
+			if(loadDB){
+				pubLoader.processEntry(entry,loadPM);
+			} else {
+				LOG.debug("No database load for "+entry.getProteinAccession()+", loadDB="+loadDB);
+				Set <Publication> pubs = entry.getPublications();
+				if(pubs.isEmpty()){
+					return;
+				}
+				String gene = entry.getGeneLocus();
+				if(gene == null){
+					LOG.warn("No gene locus for "+entry.getProteinAccession());
+					noGeneLocus++;
+				}
 				
-			}
-			String proteinAcc = entry.getProteinAccession();
-			if(proteinAcc == null){
-				//System.out.println("No protein accession");
-				noProteinAcc++;
-				
-			}
-			String protID = entry.getProteinPrimaryID();
-			if(protID == null){
-				//System.out.println("No protein ID");
-				noProtId++;
-				//System.exit(3);
-			
-			}
-			while(iter.hasNext()){
-				Publication publication = (Publication)iter.next();
-				//ArrayList<Author> authors = publication.getAuthors();
-				if("submission".equals(publication.getType())){
-					//System.out.println("PublicationType=submission; Authors:");
-					//for (Author a: authors){
-					//	System.out.println(a.getType()+": "+a.getName());
-					//}
-					//skip it
-				} else {	
-					if (publication.getPubMedId() != null){
-						if(loadPM){
+				String protID = entry.getProteinPrimaryID();
+				if(protID == null){
+					LOG.warn("No primary protein ID for "+entry.getProteinAccession());
+					noProtId++;
+				}
+				for (Publication publication: pubs){
+					if("submission".equals(publication.getType())){
+						//System.out.println("PublicationType=submission; Authors:");
+						//for (Author a: authors){
+						//	System.out.println(a.getType()+": "+a.getName());
+						//}
+						//skip it
+					} else {
+						if (publication.getPubMedId() != null){
+							if(loadPM){
+								System.out.println(gene+"\t"+proteinAcc+"\t"+protID+"\t"+publication.toString());
+							} 
+						} else { //no PMID only
 							System.out.println(gene+"\t"+proteinAcc+"\t"+protID+"\t"+publication.toString());
-						} 
-					} else { //no PMID only
-						System.out.println(gene+"\t"+proteinAcc+"\t"+protID+"\t"+publication.toString());
+						}
 					}
 				}
 			}
@@ -315,13 +268,14 @@ public class UniprotConverter extends DefaultHandler {
 	static public void main (String[] args) throws Exception {
 		Options options = new Options ();
 		options.addOption("file", true, "input file");
-		options.addOption("D", true, "chado database name,tripal flavor");
+		options.addOption("D", true, "chado database name");
 		options.addOption("S", true, "database server");
 		options.addOption("U", true, "user, able to write data into database");
 		options.addOption("P", true, "password for db user");
 		options.addOption("l", false,"load data into database, otherwise create tab-delimited file");
 		options.addOption("h", false, "help");
 		options.addOption("pubmed",false, "load publication even it has PMID");
+		options.addOption("schema",true,"specify db schema name; optional if it is public");
 		CommandLineParser cmparser = new PosixParser();
 	
 		HelpFormatter formatter = new HelpFormatter();
@@ -338,16 +292,16 @@ public class UniprotConverter extends DefaultHandler {
 			filename = cmd.getOptionValue("file");
 			File file = new File (filename);
 			if(file.exists() && !file.isDirectory()){
-				System.out.println("File to process: "+filename);
+				LOG.info("File to process: "+filename);
 			} else {
-				System.out.println("There is a problem with file: "+ filename );
+				LOG.fatal("There is a problem with file: "+ filename );
 				formatter.printHelp("UniprotConverter", options);
-				System.exit(0);
+				System.exit(1);
 			}
 		} else {
-			System.out.println("Uniprot file to process is required");
+			LOG.fatal("Uniprot file to process is required");
 			formatter.printHelp("UniprotConverter", options);
-			System.exit(0);
+			System.exit(1);
 		}
 		String db = null;
 		String server = null;
@@ -360,9 +314,9 @@ public class UniprotConverter extends DefaultHandler {
 		//load data into database
 			loadDB=true;
 			if(!cmd.hasOption("D") || !cmd.hasOption("S") || !cmd.hasOption("U") || !cmd.hasOption("P")){
-				System.out.println("Database name, server, user and password are required if you want data to be loaded into db.");
+				LOG.fatal("Database name, server, user and password are required if you want data to be loaded into db.");
 				formatter.printHelp("UniprotConverter", options);
-				System.exit(0);
+				System.exit(1);
 			}else{
 				db = cmd.getOptionValue("D");
 				server = cmd.getOptionValue("S");
@@ -376,18 +330,27 @@ public class UniprotConverter extends DefaultHandler {
 		SAXParser saxParser = spf.newSAXParser();
 		XMLReader xmlReader = saxParser.getXMLReader();
 		UniprotConverter converter = new UniprotConverter();
+		Connection connection = null;
 		if(loadDB){
 			//set PubLoader
 			converter.setLoadDB(true);
-			DatabaseUtil dbUtil = new DatabaseUtil();
-			Connection connection = dbUtil.connect(server,db,user,pwd,"chado");
+			String schema = null;
+			if(cmd.hasOption("schema")){
+				String sch = cmd.getOptionValue("schema");
+				if(!sch.equals("public")){
+					schema = sch;
+				}
+			}
+			connection = DatabaseUtil.connect(server,db,user,pwd,schema);
 			converter.setPubLoader(connection);
 		}
-		System.exit(0);
 		converter.setLoadPM(loadPM);
 		xmlReader.setContentHandler(converter);
 		xmlReader.parse(convertToFileURL(filename));
 		//close connection !!!!
+		if(connection != null){
+			connection.close();
+		}
 	}
 	
 

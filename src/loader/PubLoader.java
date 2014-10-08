@@ -9,7 +9,6 @@ import java.util.Set;
 import java.io.*;
 import java.util.LinkedHashMap;
 
-import parser.*;
 import chado.*;
 import model.*;
 
@@ -29,7 +28,8 @@ public class PubLoader {
 	private Map <String,Integer> tripalPubTerms = new HashMap();
 	private PublicationFactory pubFactory;
 	private ChadoFeatureFactory featureFactory;
-	private int featureType;
+	private int featureType=0;
+	private int proteinFeatureType=0;
 	public PubLoader (Connection conn)throws SQLException{
 		this.conn = conn;
 		// we may search between next CVs: pub_type, pub_property, pub_relationship, tripal_pub
@@ -42,7 +42,6 @@ public class PubLoader {
 		//
 		this.cvFactory = new ChadoCVFactory(conn);
 		ChadoCV cv = cvFactory.getChadoCV(defaultCV);
-		//Set<ChadoCVTerm> terms = cv.getAllCVTerms();
 		Map<Integer,ChadoCVTerm> allTerms = cv.getTerms();
 		// we need cvterm_id for the given term...
 		for (Integer key: allTerms.keySet()){
@@ -52,17 +51,44 @@ public class PubLoader {
 			//System.out.println("type: "+value+", id=" + key);
 		
 		}
-	
 		this.dbxref = new ChadoDBxref(conn);
 		dbxref.setDB();
 		cvFactory.setDBXrefRef(dbxref);
 		this.pubmedDBId = dbxref.getDBid("PMID");
-		System.out.println("db_id for PMID "+ this.pubmedDBId);
+		//System.out.println("db_id for PMID "+ this.pubmedDBId);
 		this.internalDBId = dbxref.getDBid("internal");
-		System.out.println("db_id for \"internal\" "+ internalDBId);
+		//System.out.println("db_id for \"internal\" "+ internalDBId);
 		pubFactory = new PublicationFactory(conn);
 		featureFactory = new ChadoFeatureFactory (conn);
 		this.featureType = cvFactory.getIDForTerm("gene");
+		this.proteinFeatureType=cvFactory.getIDForTerm("polypeptide");
+		checkTerms(tripalPubTerms);
+	}
+	public int getFeatureType (String featName) throws SQLException { 
+		int typeId = 0;
+		if("gene".equalsIgnoreCase(featName)){
+			typeId = featureType;
+		} else if (featName.equalsIgnoreCase("protein") ||featName.equalsIgnoreCase("polypeptide") ){
+			typeId = proteinFeatureType;
+			
+		} else {
+			typeId = cvFactory.getIDForTerm(featName);
+		}
+		return typeId;
+	}
+	
+	private void checkTerms(Map terms) throws SQLException {
+		String[] termList = {"authors","doi","publication date","citation","publication dbxref"};
+		for (int i=0; i<termList.length;i++){
+			if(tripalPubTerms.get(termList[i]) == null){
+				//check if another CV has that term
+				int termID = cvFactory.getIDForTerm(termList[i]);
+				if(termID == 0){
+					termID = cvFactory.addTerm(internalDBId, "autocreated",termList[i]);
+				}
+				tripalPubTerms.put(termList[i], termID);
+			}
+		}
 	}
 	public Map<String,String> getCVTerms (String[] terms){
 		Map<String,String> cvterms = new LinkedHashMap<String, String>();
@@ -77,46 +103,78 @@ public class PubLoader {
 		String[] toks = line.split("\t", -1);
 		Publication pub = new Publication();
 		Entry entry = new Entry ();
-		pub.setPubMedId(toks[3]);
-		pub.setType(removeQuotes(toks[4]));
-		pub.setYear(toks[5]);
-		pub.setName(removeQuotes(toks[6]));
-		pub.setTitle(removeQuotes(toks[7]));
-		entry.setGeneLocus (toks[0]);
-		entry.setProteinAccession(toks[1]);
-		entry.setProteinPrimaryID(toks[2]);
+		if(!toks[3].equals("null")){
+			pub.setPubMedId(toks[3]);
+		}
+		if(!toks[4].equals("null")){
+			pub.setType(removeQuotes(toks[4]));
+		}
+		if(!toks[5].equals("null")){
+			pub.setYear(toks[5]);
+		}
+		if(!toks[6].equals("null")){
+			pub.setName(removeQuotes(toks[6]));
+		}
+		if(!toks[7].equals("null")){
+			pub.setTitle(removeQuotes(toks[7]));
+		}
+		if(!toks[0].equals("null")){
+			entry.setGeneLocus (toks[0]);
+		}
+		if(!toks[1].equals("null")){
+			entry.setProteinAccession(toks[1]);
+		}
+		if(!toks[2].equals("null")){
+			entry.setProteinPrimaryID(toks[2]);
+		}
 		entry.addPublication(pub);
 		return entry;
 	}
+	//Processor for entry
 	public int processEntry (Entry entry, boolean loadPM) throws SQLException {
 		Set<Publication> pubs = entry.getPublications();
 		int processed = 0;
 		for (Publication pub: pubs){
 			if (!loadPM && pub.getPubMedId() != null && !pub.getPubMedId().isEmpty() ){
-				
+				System.out.println("Skipping PubMed ID="+pub.getPubMedId());
 			} else {
-				int featureID = featureFactory.getFeatureId(featureType, entry.getGeneLocus() );
-				System.out.println("feature_id for "+entry.getGeneLocus() +" is "+featureID);
 				int pubID=0;
-				if(pub.getPubMedId() == null){
-					
-					System.out.println("Load pubmed="+loadPM+" pubmed:"+pub.getTitle());
-					pubID = updatePublication(pub);	
-					processed++;
-				
+				//System.out.println("Processing Title:"+pub.getTitle());
+				pubID = updatePublication(pub);	
+				processed++;
+				int featureID = featureFactory.getFeatureId(featureType, entry.getGeneLocus() );
 				//make link with gene for pubId (existing or just created)
 				if (featureID > 0 && pubID > 0) {
 					int featurePubID = featureFactory.setFeaturePubRecord(featureID, pubID);
 					if(featurePubID > 0){
-						//System.out.println(featurePubID+" is NEW feature_pub with feature_id "+featureID+ " and pub_id="+pubID);
+						//System.out.println("Feature_pub for "+entry.getGeneLocus()+ " and pub_id="+pubID);
 					} else {
-						//System.out.println("Can't write feature_pub for feature_id "+featureID+ " and pub_id="+pubID);
+						System.out.println("Can't create feature_pub for "+entry.getGeneLocus()+ " and pub_id="+pubID);
 					}
 				} else {
-					//System.out.println("No records for feature "+featureID+" and pub_id="+pubID);
+					System.out.println("No feature_pub record for "+ entry.getGeneLocus() +" and pub_id="+pubID);
 				}
-				}
+				int proteinFeatureID = featureFactory.getFeatureId(proteinFeatureType, entry.getProteinAccession() );
 				
+				if (proteinFeatureID > 0 && pubID > 0) {
+					int featurePubID = featureFactory.setFeaturePubRecord(proteinFeatureID, pubID);
+					if(featurePubID > 0){
+						//System.out.println("Feature_pub for "+entry.getProteinAccession()+ " and pub_id="+pubID);
+					} else {
+						//System.out.println("Can't create feature_pub for "+entry.getProteinAccession()+ " and pub_id="+pubID);
+					}
+				} else {
+					System.out.println("No feature_pub record for "+ entry.getProteinAccession() +" and pub_id="+pubID);
+				}
+				//link protein with gene 
+				//if(featureID>0 && proteinFeatureID>0){
+					//in gmod chado automatically generated proteins  (gff file load) 
+				//are linked with mRNAs in the feature_relationship table
+				//type of relationship = "derives_from", object is mRNA and subject is polypeptide
+				// other fields: rank=0; value=NULL
+				//generated protein will have name=polypeptide_auto<feature_id>
+				//uniquename=auto<feature_id>
+				//}
 			}
 		}
 		return processed;
@@ -142,13 +200,12 @@ public class PubLoader {
 		if(pubID > 0){
 			System.out.println("exists record for "+pub.toString());
 		} else {	
-			System.out.println("Create new record for "+pub.toString());
+			System.out.println("Create new record for \""+pub.toString()+"\"");
 			//make new pub record
 			pubID = pubFactory.addPub(pub);
 		}
 		if(pub.getPubMedId() != null){
 			int pmDBxref = pubFactory.addPubDBXref(dbxref, "PMID",pub.getPubMedId(), pubID);
-			System.out.println(pub.getPubMedId());
 			if(tripalPubTerms.get("publication dbxref") == null){
 				System.out.println("dbxref term is not found");
 				for (String term: tripalPubTerms.keySet()){
@@ -162,10 +219,9 @@ public class PubLoader {
 		if(pub.getDOI() != null){
 			pubFactory.updatePubProp(tripalPubTerms.get("doi"), pubID, pub.getDOI());
 		}
-		
 		ArrayList<Author> authors = pub.getAuthors();		
-		pubFactory.addAuthors(authors, pubID);
 		if(pub.getAuthorsList() != null){
+			pubFactory.addAuthors(authors, pubID);
 			pubFactory.updatePubProp(tripalPubTerms.get("authors"), pubID, pub.getAuthorsList());
 		}
 		if(pub.getYear() !=null){
@@ -246,7 +302,8 @@ public class PubLoader {
 			loadPM=true;
 		}
 		BufferedReader br = null; 
-		Connection conn = DatabaseUtil.connect(server, db, user, pass,null);
+		Connection conn = DatabaseUtil.connect(server, db, user, pass, null);
+		
 		if (conn != null){
 			System.out.println ("connection to "+db+ " is available");
 			PubLoader pubLoader = new PubLoader(conn);
@@ -266,6 +323,7 @@ public class PubLoader {
 		        	  System.exit(1);
 		          }
 		          Entry entry = pubLoader.processLine(line);
+		          System.out.println("Processing entry: "+entry.getProteinAccession());
 		          pubLoader.processEntry(entry, loadPM);
 		          //pubLoader.writePublication(entry);
 		          //Create Publication object

@@ -57,9 +57,9 @@ public class ChadoCVFactory {
         throws SQLException {
         String query =
             "SELECT cvterm_rel.subject_id, cvterm_rel.object_id, rel_type.name"
-            + "  FROM chado.cvterm_relationship cvterm_rel, chado.cvterm subject_cvterm,"
-            + "       chado.cvterm object_cvterm, chado.cv cvterm_cv,"
-            + "       chado.cvterm rel_type"
+            + "  FROM cvterm_relationship cvterm_rel, cvterm subject_cvterm,"
+            + "  cvterm object_cvterm, cv cvterm_cv,"
+            + "  cvterm rel_type"
             + " WHERE subject_cvterm.cv_id = cvterm_cv.cv_id"
             + "   AND object_cvterm.cv_id = cvterm_cv.cv_id"
             + "   AND cvterm_cv.name = ?"
@@ -67,7 +67,7 @@ public class ChadoCVFactory {
             + "   AND cvterm_rel.object_id = object_cvterm.cvterm_id"
             + "   AND cvterm_rel.type_id = rel_type.cvterm_id"
             + "   AND (rel_type.name = 'isa' OR rel_type.name = 'is_a')";
-        LOG.info("executing: " + query);
+        LOG.info("executing: " + query+" for name="+ cvName);
         PreparedStatement stmt = connection.prepareStatement(query);
         stmt.setString(1, cvName);
         ResultSet res = stmt.executeQuery();
@@ -86,9 +86,9 @@ public class ChadoCVFactory {
         throws SQLException {
         String query =
             "SELECT cvterm.cvterm_id, cvterm.name as cvterm_name"
-            + " FROM chado.cvterm, chado.cv WHERE cv.name = ?"
+            + " FROM cvterm, cv WHERE cv.name = ?"
             + " AND cvterm.cv_id = cv.cv_id";
-        LOG.info("executing: " + query);
+        LOG.info("executing: " + query + " for name="+cvName);
         PreparedStatement stmt = connection.prepareStatement(query);
         stmt.setString(1, cvName);
         ResultSet res = stmt.executeQuery();
@@ -96,8 +96,8 @@ public class ChadoCVFactory {
     }
     public Integer getIDForTerm(String term) throws SQLException {
     	Integer cvtermID = new Integer (0);
-    	String query = "SELECT cvterm_id FROM chado.cvterm WHERE name=?";
-    	LOG.info("executing: " + query);
+    	String query = "SELECT cvterm_id FROM cvterm WHERE name=?";
+    	LOG.info("executing: " + query + " for term=" + term);
     	PreparedStatement stmt = connection.prepareStatement(query);
     	stmt.setString(1, term);
     	ResultSet res = stmt.executeQuery();
@@ -110,8 +110,8 @@ public class ChadoCVFactory {
     // add term for CV ("autocreated") and db_id {internal}
     public int addTerm (int dbID, String cv, String term) throws SQLException {
     	int newTermId = 0;
-    	String query = "SELECT cv_id FROM chado.cv WHERE name = ?";
-    	LOG.info("executing: " + query);
+    	String query = "SELECT cv_id FROM cv WHERE name = ?";
+    	LOG.info("executing: " + query + " for name=" + cv );
     	PreparedStatement stmt = connection.prepareStatement(query);
     	stmt.setString(1, cv);
     	ResultSet res = stmt.executeQuery();
@@ -131,21 +131,21 @@ public class ChadoCVFactory {
     	int xrefID = dbxref.getDBXrefForName (term, "internal");
     	
     	
-    	String insert = "INSERT into chado.cvterm (cv_id, name, dbxref_id, is_obsolete, is_relationshiptype) "
+    	String insert = "INSERT into cvterm (cv_id, name, dbxref_id, is_obsolete, is_relationshiptype) "
     			+ "VALUES (?, ?, ?, 0, 0)";
     	stmt = connection.prepareStatement(insert, Statement.RETURN_GENERATED_KEYS);
     	stmt.setInt(1, cvID);
     	stmt.setString(2, term);
     	stmt.setInt(3, xrefID);
     	
-    	System.out.println ("Executing \"" + insert + "\" for cv_id = " + cvID + " name=" +term + " dbxref_id = " + xrefID);
+    	LOG.info ("Executing \"" + insert + "\" for cv_id = " + cvID + " name=" +term + " dbxref_id = " + xrefID);
     	int count = stmt.executeUpdate();
     	ResultSet resKey = stmt.getGeneratedKeys();
     	if(resKey.next()){
     		newTermId = resKey.getInt(1);
     	}
-    	System.out.println("Updated "+ count+ "raws in cvterm");
-    	System.out.println("New term_id = "+newTermId);
+    	LOG.info("Updated "+ count+ "raws in cvterm");
+    	LOG.info("New term_id = "+newTermId);
     	return newTermId;
     }
     //ChadoDBxref for this connection
